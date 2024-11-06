@@ -25,34 +25,54 @@ namespace XmlFileValidation
 
 
 		/// <summary>
-		/// This is the file you use as a correct reference.
-		/// The testfile will be validate with this.
-		/// You need to garantee, that this file is correct.
+		/// The file that is used as an error-free confirmed reference file for testing the test file.
+		/// Please use the load method to fill these values.
 		/// </summary>
 		public static XDocument ReferenceFile;
 
 		/// <summary>
-		/// This is the file that will be tested.
-		/// </summary>    	
+		/// The file to be checked
+		/// Please use the load method to fill these values
+		/// </summary>  
 		public static XDocument TestFile;
+
+		/// <summary>
+		/// This value is filled when the test file is loaded.
+		/// If the test file is exported in the event of a failure, this file name is used.
+		/// </summary>
 		public static string TestFileName;
 
+		/// <summary>
+		/// Used by some methods to distinguish between reference or test file.
+		/// </summary>
 		public enum XFileType
 		{
 			Reference = 0,
 			Test = 1
 		}
 
+		/// <summary>
+		/// Every file with this extension will be regognized as supported.
+		/// </summary>
 		private static List<string> SupportedFileTypes = new List<string>()
 		{
 			".xml"
 		};
 
-
+		/// <summary>
+		/// XElement with dynamic values like uuids or timestamps etc.
+		/// These elements will be checked without value validation.
+		/// </summary>
 		private static List<string> DynamicXmlElements = new List<string>();
 
+		/// <summary>
+		/// These XElement will be ignored in the test.
+		/// </summary>
 		private static List<string> IgnoredXmlElements = new List<string>();
 
+		/// <summary>
+		/// To get more informations by the ranorex report.
+		/// </summary>
 		public static bool IsDebug = false;
 
 		public static bool StrictPathMatching = true;
@@ -65,7 +85,9 @@ namespace XmlFileValidation
 
 		public static string SaveTestFilePath;
 
-
+		/// <summary>
+		/// Every log entry uses this value as category.
+		/// </summary>
 		private const string ReportCategory = "Xml Validation";
 
 
@@ -358,10 +380,12 @@ namespace XmlFileValidation
 
 		}
 
+		
 		/// <summary>
-		/// 
+		/// Converts the elements of the xml file into the internal format for further processing
 		/// </summary>
-		[UserCodeMethod]
+		/// <param name="xmlDocument">The xml that should be parsed</param>
+		/// <returns>A list of the internal used xml Info object</returns>
 		private static List<XmlInfoObject> XmlInfoObjectParser(XDocument xmlDocument)
 		{
 
@@ -413,7 +437,6 @@ namespace XmlFileValidation
 		/// </summary>
 		/// <param name="category">The log category</param>
 		/// <param name="message">The log message</param>
-		[UserCodeMethod]
 		private static void LogDebug(string category, string message)
 		{
 			// Es wird nur eine debug Nachricht ausgegeben, wenn der Schalter dafür auf True steht.
@@ -429,7 +452,6 @@ namespace XmlFileValidation
 		/// </summary>
 		/// <param name="element">The element for which a path is to be created</param>
 		/// <returns>A path as a string, which is helpful for identifying an xml element.</returns>
-		[UserCodeMethod]
 		private static string GetPathAsString(XElement element)
 		{
 
@@ -690,8 +712,7 @@ namespace XmlFileValidation
 		/// This is a placeholder text. Please describe the purpose of the
 		/// user code method here. The method is published to the user code library
 		/// within a user code collection.
-		/// </summary>
-		[UserCodeMethod]
+		/// </summary>		
 		private static void ReportTestStepResult(bool stepIsFailed, string reportMessage)
 		{
 
@@ -716,8 +737,7 @@ namespace XmlFileValidation
 		/// </summary>
 		/// <param name="xmlInfoObject">The internal xml object that is evaluated</param>
 		/// <param name="type">The type of the file (reference or test)</param>
-		/// <returns>A heading line for a step in the Ranorex report</returns>
-		[UserCodeMethod]
+		/// <returns>A heading line for a step in the Ranorex report</returns>		
 		private static string LogBuilderHeader(XmlInfoObject xmlInfoObject, XFileType type)
 		{
 
@@ -748,8 +768,7 @@ namespace XmlFileValidation
 
 		/// <summary>
 		/// Builds the rows and path information for the Ranorex report
-		/// </summary>
-		[UserCodeMethod]
+		/// </summary>		
 		private static string LogBuilderLineInformation(XmlInfoObject xObject)
 		{
 
@@ -764,7 +783,6 @@ namespace XmlFileValidation
 		/// </summary>
 		/// <param name="xObject">The element to be evaluated</param>
 		/// <returns>A Report line about the dynamic informations about the element</returns>
-		[UserCodeMethod]
 		private static string LogBuilderIsDynamic(XmlInfoObject xObject)
 		{
 			return string.Format("Is dynamic: {0}", xObject.IsDynamic ? "Yes" : "No");
@@ -773,7 +791,6 @@ namespace XmlFileValidation
 		/// <summary>
 		/// Returns the number of an element in the XML as report info.
 		/// </summary>
-		[UserCodeMethod]
 		private static string LogBuilderElementCounter(int amountOf, XFileType fileType)
 		{
 			return string.Format("Frequency in the {0} file: {1}",
@@ -787,7 +804,6 @@ namespace XmlFileValidation
 		/// </summary>
 		/// <param name="xmlFile">the file to comment</param>
 		/// <param name="message">the comment message</param>
-		[UserCodeMethod]
 		private static void CommentXmlFile(XDocument xmlFile, string message)
 		{
 			XComment xmlComment = new XComment(message);
@@ -799,7 +815,6 @@ namespace XmlFileValidation
 		/// user code method here. The method is published to the user code library
 		/// within a user code collection.
 		/// </summary>
-		[UserCodeMethod]
 		private static string LogBuilderError01(int countTest, int countRef, XmlInfoObject xmlInfoObject, bool includeExistsNote)
 		{
 			StringBuilder logBuilder = new StringBuilder();
@@ -822,7 +837,6 @@ namespace XmlFileValidation
 		/// user code method here. The method is published to the user code library
 		/// within a user code collection.
 		/// </summary>
-		[UserCodeMethod]
 		private static string LogBuilderError02(int countInTest, XmlInfoObject xmlInfoObject)
 		{
 			StringBuilder logBuilder = new StringBuilder();
@@ -840,7 +854,6 @@ namespace XmlFileValidation
 		/// </summary>
 		/// <param name="file">The file path</param>
 		/// <returns>True if the file is supported</returns>
-		[UserCodeMethod]
 		private static bool IsSupportedFile(string file)
 		{
 
