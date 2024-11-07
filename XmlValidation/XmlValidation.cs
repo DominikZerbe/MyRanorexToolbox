@@ -17,12 +17,14 @@ using System.Xml.Linq;
 namespace XmlFileValidation
 {
 	/// <summary>
-	/// Creates a Ranorex user code collection. A collection is used to publish user code methods to the user code library.
+	/// Xml file validation for Ranorex. Developed by Dominik Zerbe.
+	/// For more information: https://github.com/DominikZerbe/MyRanorexToolbox/
 	/// </summary>
 	[UserCodeCollection]
 	public class XmlValidation
 	{
 
+		#region CoreProperties
 
 		/// <summary>
 		/// The file that is used as an error-free confirmed reference file for testing the test file.
@@ -37,12 +39,6 @@ namespace XmlFileValidation
 		public static XDocument TestFile;
 
 		/// <summary>
-		/// This value is filled when the test file is loaded.
-		/// If the test file is exported in the event of a failure, this file name is used.
-		/// </summary>
-		public static string TestFileName;
-
-		/// <summary>
 		/// Used by some methods to distinguish between reference or test file.
 		/// </summary>
 		public enum XFileType
@@ -51,6 +47,8 @@ namespace XmlFileValidation
 			Test = 1
 		}
 
+		#endregion
+
 		/// <summary>
 		/// Every file with this extension will be regognized as supported.
 		/// </summary>
@@ -58,6 +56,11 @@ namespace XmlFileValidation
 		{
 			".xml"
 		};
+
+		/// <summary>
+		/// Every log entry uses this value as category.
+		/// </summary>
+		private const string ReportCategory = "Xml Validation";
 
 		/// <summary>
 		/// XElement with dynamic values like uuids or timestamps etc.
@@ -70,15 +73,28 @@ namespace XmlFileValidation
 		/// </summary>
 		private static List<string> IgnoredXmlElements = new List<string>();
 
+		#region ConfigProperties
 		/// <summary>
 		/// To get more informations by the ranorex report.
 		/// </summary>
 		public static bool IsDebug = false;
 
+		/// <summary>
+		/// Controls whether the entire XML path is used for the 
+		/// validation of individual xml elements
+		/// </summary>
 		public static bool StrictPathMatching = true;
 
+		/// <summary>
+		/// Information that is output in the report can also 
+		/// be attached to the test file as a comment
+		/// </summary>
 		public static bool CommentTestFileOnError = false;
 
+		/// <summary>
+		/// Controls whether the test file is output in the report
+		/// in the event of a failure
+		/// </summary>
 		public static bool ReportTestfileOnError = false;
 
 		public static bool SaveTestFileOnError = false;
@@ -86,13 +102,15 @@ namespace XmlFileValidation
 		public static string SaveTestFilePath;
 
 		/// <summary>
-		/// Every log entry uses this value as category.
+		/// This value is filled when the test file is loaded with the Load method.
+		/// If the test file is exported in the event of a failure, this file name is used.
 		/// </summary>
-		private const string ReportCategory = "Xml Validation";
+		public static string SaveTestFileName;
+
+		#endregion
 
 
-
-
+		#region SearchXmlFile
 		/// <summary>
 		/// Searches for the first matching file from the file system that contains 
 		/// all passed xml elements or returns null if no file matches
@@ -112,6 +130,12 @@ namespace XmlFileValidation
 			if (matchingPatterns == null || matchingPatterns.Count == 0)
 			{
 				throw new ArgumentNullException("matching patterns is null or empty");
+			}
+
+			if(!System.IO.Directory.Exists(path))
+			{
+				Report.Failure(ReportCategory,string.Format("The dictionary does not exists: {0}",path));
+				return null;
 			}
 
 			var supportedFiles = GetSupportedFilesFromPath(path);
@@ -163,6 +187,17 @@ namespace XmlFileValidation
 		public static string GetSingleFileFromPath(string path, bool failOnMultipleFiles)
 		{
 
+			if (path == null)
+			{
+				throw new ArgumentNullException("path is null");
+			}
+
+			if(!System.IO.Directory.Exists(path))
+			{
+				Report.Failure(ReportCategory,string.Format("The dictionary does not exists: {0}",path));
+				return null;
+			}
+
 			var supportedFiles = GetSupportedFilesFromPath(path);
 
 			if (supportedFiles.Count == 0)
@@ -194,6 +229,7 @@ namespace XmlFileValidation
 				}
 				else
 				{
+					
 					// Ideally, this should not be used, but I leave it in anyway. 
 					Report.Warn(ReportCategory, string.Format("The first matching file is returned by chance: {0}", supportedFiles[0]));
 					return supportedFiles[0];
@@ -221,16 +257,19 @@ namespace XmlFileValidation
 			}
 
 			var supportedFiles = System.IO.Directory.GetFiles(path)
-									.Where(f => IsSupportedFile(f))
-									.ToList();
+													.Where(f => IsSupportedFile(f))
+													.ToList();
 
 			LogDebug("GetSupportedFilesFromPath", string.Format("{0} supported files were found in {1}.",
-					 supportedFiles.Count.ToString(), path));
+																supportedFiles.Count.ToString(), path));
 
 			return supportedFiles;
 
 		}
 
+		#endregion
+
+		#region ConfigFunctions
 		/// <summary>
 		/// Adds a file extension to the list of supported file extensions.
 		/// (Experimental: Never tested!)
@@ -284,6 +323,7 @@ namespace XmlFileValidation
 		/// </summary>
 		public static void AddIgnoredXmlElement(XElement xmlElement)
 		{
+
 			if (xmlElement == null)
 			{
 				throw new ArgumentNullException("the xml Element is null");
@@ -294,8 +334,12 @@ namespace XmlFileValidation
 				Report.Info(ReportCategory, string.Format("The element '{0}' was added to the list of ignored elements", xmlElement.Name.LocalName));
 				IgnoredXmlElements.Add(xmlElement.Name.LocalName);
 			}
+
 		}
 
+		#endregion
+
+		#region XmlFunctions
 
 		/// <summary>
 		/// Returns all parent xml elements of an XElement in a list.
@@ -350,9 +394,7 @@ namespace XmlFileValidation
 			var foundElements = new List<XmlInfoObject>();
 
 			// The minimum filter that is applied. More filtering may be applied within the loop
-			foreach (XElement element in xmlDocument.Descendants().Where(
-				x => x.Name.LocalName == xmlElement.Name.LocalName
-			))
+			foreach (XElement element in xmlDocument.Descendants().Where(x => x.Name.LocalName == xmlElement.Name.LocalName))
 			{
 
 				// Skip all elements which are not on the lowest level.
@@ -366,20 +408,19 @@ namespace XmlFileValidation
 				if (strictPathMatching && GetPathAsString(element) != GetPathAsString(xmlElement)) { continue; }
 
 				// The object for internal use
-				XmlInfoObject xObject = new XmlInfoObject
+				XmlInfoObject xmlInfoObject = new XmlInfoObject
 				(
 					xmlElement: element,
 					isDynamic: DynamicXmlElements.Contains(element.Name.LocalName)
 				);
 
-				foundElements.Add(xObject);
+				foundElements.Add(xmlInfoObject);
 
 			}
 
 			return foundElements;
 
 		}
-
 		
 		/// <summary>
 		/// Converts the elements of the xml file into the internal format for further processing
@@ -397,7 +438,7 @@ namespace XmlFileValidation
 				// elements with the ignored flag should be skipped
 				if (IgnoredXmlElements.Any(e => e.ToLower() == elementToParse.Name.LocalName.ToLower()))
 				{
-					continue;
+					continue;				
 				}
 
 				// Elements with sub-objects are not parsed. However, the lowest sub-objects are.
@@ -408,11 +449,11 @@ namespace XmlFileValidation
 				// Ignored elements are simply not considered at all
 				if (elementToParse.Value.ToLower() == "!dynamic")
 				{
-					AddDynamicXmlElement(elementToParse);
+					AddDynamicXmlElement(elementToParse);				
 				}
 
 				if (elementToParse.Value.ToLower() == "!ignore")
-				{
+				{					
 					LogDebug("XmlInfoObjectParser", string.Format("The element '{0}' will bei ignored at all.", elementToParse.Name.LocalName));
 					continue;
 				}
@@ -421,7 +462,7 @@ namespace XmlFileValidation
 				XmlInfoObject xObject = new XmlInfoObject
 				(
 					xmlElement: elementToParse,
-					isDynamic: DynamicXmlElements.Contains(elementToParse.Name.LocalName)
+					isDynamic: DynamicXmlElements.Contains(elementToParse.Name.LocalName)				
 				);
 
 				foundElements.Add(xObject);
@@ -429,21 +470,6 @@ namespace XmlFileValidation
 			}
 
 			return foundElements;
-
-		}
-
-		/// <summary>
-		/// Outputs a debug log if the switch for this is set to True
-		/// </summary>
-		/// <param name="category">The log category</param>
-		/// <param name="message">The log message</param>
-		private static void LogDebug(string category, string message)
-		{
-			// Es wird nur eine debug Nachricht ausgegeben, wenn der Schalter dafür auf True steht.
-			if (!IsDebug) { return; }
-
-			// Hier wird das Log ausgegeben.
-			Report.Debug(category, message);
 
 		}
 
@@ -466,6 +492,7 @@ namespace XmlFileValidation
 			StringBuilder pathBuilder = new StringBuilder();
 			foreach (XmlInfoObject xObject in allParents)
 			{
+				
 				pathBuilder.Append(xObject.Name);
 
 				// The last element should not get an slash.
@@ -478,6 +505,175 @@ namespace XmlFileValidation
 
 			return pathBuilder.ToString();
 		}
+
+		/// <summary>
+		/// Comments a xml file
+		/// </summary>
+		/// <param name="xmlFile">the file to comment</param>
+		/// <param name="message">the comment message</param>
+		private static void CommentXmlFile(XDocument xmlFile, string message)
+		{
+
+			XComment xmlComment = new XComment(message);
+			xmlFile.Add(xmlComment);
+
+		}
+
+		#endregion
+
+		#region ReportFunctions
+
+		/// <summary>
+		/// Outputs a debug log if the switch for this is set to True
+		/// </summary>
+		/// <param name="category">The log category</param>
+		/// <param name="message">The log message</param>
+		private static void LogDebug(string category, string message)
+		{
+			// Es wird nur eine debug Nachricht ausgegeben, wenn der Schalter dafür auf True steht.
+			if (!IsDebug) { return; }
+
+			// Hier wird das Log ausgegeben.
+			Report.Debug(category, message);
+
+		}
+
+				/// <summary>
+		/// This is a placeholder text. Please describe the purpose of the
+		/// user code method here. The method is published to the user code library
+		/// within a user code collection.
+		/// </summary>		
+		private static void ReportTestStepResult(bool stepIsFailed, string reportMessage)
+		{
+
+			// To avoid unnecessarily inflating the report, we only output success messages for steps for debug purposes. 
+			// Errors are of course always output
+			if (IsDebug == false && stepIsFailed == false)
+			{
+				return;
+			}
+
+			Report.Log(
+				level: stepIsFailed ? ReportLevel.Error : ReportLevel.Success,
+				category: ReportCategory,
+				message: reportMessage);
+
+		}
+
+		/// <summary>
+		/// Constructs the heading for the test step in the Ranorex report 
+		/// </summary>
+		/// <param name="xmlInfoObject">The internal xml object that is evaluated</param>
+		/// <param name="type">The type of the file (reference or test)</param>
+		/// <returns>A heading line for a step in the Ranorex report</returns>		
+		private static string LogBuilderHeader(XmlInfoObject xmlInfoObject, XFileType type)
+		{
+
+			if (xmlInfoObject == null)
+			{
+				throw new ArgumentNullException("xmlInfoObject was null");
+			}
+
+			switch (xmlInfoObject.XmlElement.Parent != null)
+			{
+				case true:
+					return string.Format("{0} element: {1}/{2} ==> {3}",
+										 type == XFileType.Reference ? "Reference" : "Test",
+										 xmlInfoObject.XmlElement.Parent.Name.LocalName,
+										 xmlInfoObject.Name,
+										 xmlInfoObject.XmlElement.Value);
+
+				case false:
+					return string.Format("{0} element: {2} ==> {3}",
+										 type == XFileType.Reference ? "Reference" : "Test",
+										 xmlInfoObject.XmlElement.Parent.Name.LocalName,
+										 xmlInfoObject.XmlElement.Value);
+
+				default:
+					// I think you cant reach this point
+					return null;
+			}
+
+		}
+
+		/// <summary>
+		/// Builds the rows and path information for the Ranorex report
+		/// </summary>		
+		private static string LogBuilderLineInformation(XmlInfoObject xmlInfoObject)
+		{
+
+			return string.Format("Line: {0} ==> Path: '{1}'",
+								 xmlInfoObject.LineNumber != -1 ? xmlInfoObject.LineNumber.ToString() : "unknown",
+								 GetPathAsString(xmlInfoObject.XmlElement));
+
+		}
+
+		/// <summary>
+		/// Builds the information about the dynamic of the element for the Ranorex report
+		/// </summary>
+		/// <param name="xmlInfoObject">The element to be evaluated</param>
+		/// <returns>A Report line about the dynamic informations about the element</returns>
+		private static string LogBuilderIsDynamic(XmlInfoObject xmlInfoObject)
+		{
+			return string.Format("Is dynamic: {0}", xmlInfoObject.IsDynamic ? "Yes" : "No");
+		}
+
+		/// <summary>
+		/// Returns the number of an element in the XML as report info.
+		/// </summary>
+		private static string LogBuilderElementCounter(int amountOf, XFileType fileType)
+		{
+			return string.Format("Frequency in the {0} file: {1}",
+								 fileType == XFileType.Reference ? "reference" : "test",
+								 amountOf.ToString());
+
+		}
+
+				/// <summary>
+		/// This is a placeholder text. Please describe the purpose of the
+		/// user code method here. The method is published to the user code library
+		/// within a user code collection.
+		/// </summary>
+		private static string LogBuilderError01(int countTest, int countRef, XmlInfoObject xmlInfoObject, bool includeExistsNote)
+		{
+
+			StringBuilder logBuilder = new StringBuilder();
+
+			logBuilder.AppendLine("==> Error 01");
+			logBuilder.AppendLine(string.Format("The number of reference element '{0}' with value '{1}' in the test file differs from the reference file.",
+												xmlInfoObject.Name,
+												xmlInfoObject.XmlElement.Value));
+			if (includeExistsNote)
+			{
+				logBuilder.AppendLine("There are reference elements with the same name but different values");
+			}
+
+			return logBuilder.ToString();
+
+		}
+
+		/// <summary>
+		/// This is a placeholder text. Please describe the purpose of the
+		/// user code method here. The method is published to the user code library
+		/// within a user code collection.
+		/// </summary>
+		private static string LogBuilderError02(int countInTest, XmlInfoObject xmlInfoObject)
+		{
+
+			StringBuilder logBuilder = new StringBuilder();
+
+			logBuilder.AppendLine("==> Error 02");
+			logBuilder.AppendLine(string.Format("The test element '{0}' with value '{1}' is unknown for the reference file.",
+												xmlInfoObject.Name,
+												xmlInfoObject.XmlElement.Value));
+
+			return logBuilder.ToString();
+
+		}
+
+		#endregion
+
+		#region TestControl
 
 		/// <summary>
 		/// Starts the xml comparison test. 
@@ -493,29 +689,26 @@ namespace XmlFileValidation
 				throw new ArgumentNullException("The reference or test file is null");
 			}
 
-			if (SaveTestFileOnError && (string.IsNullOrEmpty(TestFileName) || string.IsNullOrEmpty(SaveTestFilePath)))
+			if (SaveTestFileOnError && (string.IsNullOrEmpty(SaveTestFileName) || string.IsNullOrEmpty(SaveTestFilePath)))
 			{
 				Report.Warn(ReportCategory, "Your configuration is incorrect. The export function of the xml file is deactivated");
 			}
 
-
-
-			var referenceElements = XmlInfoObjectParser(ReferenceFile);
-			var testElements = XmlInfoObjectParser(TestFile);
-
-
+			// These are our parsed elements that we need for all subsequent test steps
+			var parsedReferenceElements = XmlInfoObjectParser(ReferenceFile);
+			var parsedTestElements = XmlInfoObjectParser(TestFile);
 
 			// We need these values to be able to output the correct log.
 			bool isTestCaseFailed = false;
 			bool isTestStepFailed = false;
-			int totalErrorCount = 0;
+			int teststepErrorCounter = 0;
 
 			// PHASE 1 BEGINS HERE
 
 			Report.Info(ReportCategory, "Phase 1 => All elements in the reference file are determined in the test file. " +
 						"If there is a deviation in the frequency of the element in the test file, there is an error.");
 
-			foreach (var refElement in referenceElements)
+			foreach (var parsedReferenceElement in parsedReferenceElements)
 			{
 
 				// reset the step error flag
@@ -523,43 +716,44 @@ namespace XmlFileValidation
 
 				// Hier wird die Anzahl des Elements in der Referenzdatei und in der Testdatei gezählt.
 				// bei dynamischen Werten muss zumindest die selbe Anzahl an Elementen vorliegen, wenn der Wert ignoriert wird.
-				var foundRefElements = FindXmlInfoObject(
+				var foundReferenceElements = FindXmlInfoObject(
 					xmlDocument: ReferenceFile,
-					xmlElement: refElement.XmlElement,
-					valuesMustMatch: !refElement.IsDynamic,
+					xmlElement: parsedReferenceElement.XmlElement,
+					valuesMustMatch: !parsedReferenceElement.IsDynamic,
 					strictPathMatching: StrictPathMatching);
 
 				var foundTestElements = FindXmlInfoObject(
 					xmlDocument: TestFile,
-					xmlElement: refElement.XmlElement,
-					valuesMustMatch: !refElement.IsDynamic,
+					xmlElement: parsedReferenceElement.XmlElement,
+					valuesMustMatch: !parsedReferenceElement.IsDynamic,
 					strictPathMatching: StrictPathMatching);
 
 
 				// The log is built here, which outputs the general information about the XML element.
 				StringBuilder logBuilder = new StringBuilder();
-				logBuilder.AppendLine(LogBuilderHeader(refElement, XFileType.Reference))
-				.AppendLine(LogBuilderLineInformation(refElement))
-				.AppendLine(LogBuilderIsDynamic(refElement))
-				.AppendLine(LogBuilderElementCounter(foundRefElements.Count, XFileType.Reference))
+				logBuilder.AppendLine(LogBuilderHeader(parsedReferenceElement, XFileType.Reference))
+				.AppendLine(LogBuilderLineInformation(parsedReferenceElement))
+				.AppendLine(LogBuilderIsDynamic(parsedReferenceElement))
+				.AppendLine(LogBuilderElementCounter(foundReferenceElements.Count, XFileType.Reference))
 				.AppendLine(LogBuilderElementCounter(foundTestElements.Count, XFileType.Test));
 
 				// This is the entire validation step
-				if (foundRefElements.Count != foundTestElements.Count)
+				if (foundReferenceElements.Count != foundTestElements.Count)
 				{
+
 					isTestStepFailed = true;
 					isTestCaseFailed = true;
-					totalErrorCount = totalErrorCount + 1;
+					teststepErrorCounter = teststepErrorCounter + 1;
 
 					bool identicalElementsExists = FindXmlInfoObject(xmlDocument: TestFile,
-						xmlElement: refElement.XmlElement,
+						xmlElement: parsedReferenceElement.XmlElement,
 						strictPathMatching: StrictPathMatching,
 						valuesMustMatch: false).Count != 0;
 
 					logBuilder.AppendLine(LogBuilderError01(
 						countTest: foundTestElements.Count,
-						countRef: foundRefElements.Count,
-						xmlInfoObject: refElement,
+						countRef: foundReferenceElements.Count,
+						xmlInfoObject: parsedReferenceElement,
 						includeExistsNote: identicalElementsExists));
 
 				}
@@ -572,21 +766,21 @@ namespace XmlFileValidation
 
 				// Send the Report to the user (on failure or debug)
 				ReportTestStepResult(isTestStepFailed, logBuilder.ToString());
+
 			}
 
 
 			Report.Log(
-				level: totalErrorCount == 0 ? ReportLevel.Success : ReportLevel.Failure,
+				level: teststepErrorCounter == 0 ? ReportLevel.Success : ReportLevel.Failure,
 				category: ReportCategory,
 				message: string.Format("Phase 1 completed. {0} reference elements were checked in the test file. {1} deviations were identified.",
-									   referenceElements.Count.ToString(),
-									   totalErrorCount.ToString()));
+									   parsedReferenceElements.Count.ToString(),
+									   teststepErrorCounter.ToString()));
 
 			// PHASE 2 BEGINS HERE
 
 			// reset the error counter for the next phase 	
-			totalErrorCount = 0;
-
+			teststepErrorCounter = 0;
 
 			// Send log about the next testphase
 			StringBuilder reportInfoBuilder = new StringBuilder();
@@ -595,7 +789,7 @@ namespace XmlFileValidation
 
 			Report.Info(ReportCategory, reportInfoBuilder.ToString());
 
-			foreach (var testElement in testElements)
+			foreach (var testElement in parsedTestElements)
 			{
 				isTestStepFailed = false;
 
@@ -621,15 +815,13 @@ namespace XmlFileValidation
 				if (countedRefElements == 0)
 				{
 					isTestStepFailed = true;
-					totalErrorCount = totalErrorCount + 1;
+					teststepErrorCounter = teststepErrorCounter + 1;
 
 					logBuilder.AppendLine(LogBuilderError02(countedTestElements, testElement));
 
 				}
 
-				ReportTestStepResult(
-					stepIsFailed: isTestStepFailed,
-					reportMessage: logBuilder.ToString());
+				ReportTestStepResult(stepIsFailed: isTestStepFailed, reportMessage: logBuilder.ToString());
 
 				if (CommentTestFileOnError && isTestStepFailed)
 				{
@@ -638,15 +830,12 @@ namespace XmlFileValidation
 
 			}
 
-
 			Report.Log(
-				level: totalErrorCount == 0 ? ReportLevel.Success : ReportLevel.Failure,
+				level: teststepErrorCounter == 0 ? ReportLevel.Success : ReportLevel.Failure,
 				category: ReportCategory,
 				message: string.Format("Phase 2 completed. {0} test elements were checked in the reference file. {1} unknown elements were identified.",
-									   referenceElements.Count.ToString(),
-									   totalErrorCount.ToString()));
-
-
+									   parsedReferenceElements.Count.ToString(),
+									   teststepErrorCounter.ToString()));
 
 			// After Test tasks if test is failed
 			if (isTestCaseFailed)
@@ -662,7 +851,7 @@ namespace XmlFileValidation
 				// Writes the testfile to disk, if the option is true
 				if (SaveTestFileOnError)
 				{
-					string filepath = System.IO.Path.Combine(SaveTestFilePath, TestFileName);
+					string filepath = System.IO.Path.Combine(SaveTestFilePath, SaveTestFileName);
 
 					Report.Info(category: ReportCategory,
 						message: string.Format("Write testfile to disk: {0}", filepath));
@@ -671,13 +860,14 @@ namespace XmlFileValidation
 						path: filepath);
 				}
 
-
 			}
 
-
-
-
 		}
+
+
+		#endregion
+
+		#region FilesystemFunctions
 
 		/// <summary>
 		/// Writes a xml file to disk.
@@ -709,147 +899,6 @@ namespace XmlFileValidation
 		}
 
 		/// <summary>
-		/// This is a placeholder text. Please describe the purpose of the
-		/// user code method here. The method is published to the user code library
-		/// within a user code collection.
-		/// </summary>		
-		private static void ReportTestStepResult(bool stepIsFailed, string reportMessage)
-		{
-
-			// To avoid unnecessarily inflating the report, we only output success messages for steps for debug purposes. 
-			// Errors are of course always output
-			if (IsDebug == false && stepIsFailed == false)
-			{
-				return;
-			}
-
-			Report.Log(
-				level: stepIsFailed ? ReportLevel.Error : ReportLevel.Success,
-				category: ReportCategory,
-				message: reportMessage);
-
-
-
-		}
-
-		/// <summary>
-		/// Constructs the heading for the test step in the Ranorex report 
-		/// </summary>
-		/// <param name="xmlInfoObject">The internal xml object that is evaluated</param>
-		/// <param name="type">The type of the file (reference or test)</param>
-		/// <returns>A heading line for a step in the Ranorex report</returns>		
-		private static string LogBuilderHeader(XmlInfoObject xmlInfoObject, XFileType type)
-		{
-
-			if (xmlInfoObject == null)
-			{
-				throw new ArgumentNullException("xmlInfoObject was null");
-			}
-
-			switch (xmlInfoObject.XmlElement.Parent != null)
-			{
-				case true:
-					return string.Format("{0} element: {1}/{2} ==> {3}",
-										 type == XFileType.Reference ? "Reference" : "Test",
-										 xmlInfoObject.XmlElement.Parent.Name.LocalName,
-										 xmlInfoObject.Name,
-										 xmlInfoObject.XmlElement.Value);
-				case false:
-					return string.Format("{0} element: {2} ==> {3}",
-										 type == XFileType.Reference ? "Reference" : "Test",
-										 xmlInfoObject.XmlElement.Parent.Name.LocalName,
-										 xmlInfoObject.XmlElement.Value);
-				default:
-					// I think you cant reach this point
-					return null;
-			}
-
-		}
-
-		/// <summary>
-		/// Builds the rows and path information for the Ranorex report
-		/// </summary>		
-		private static string LogBuilderLineInformation(XmlInfoObject xObject)
-		{
-
-			return string.Format("Line: {0} ==> Path: '{1}'",
-								 xObject.LineNumber != -1 ? xObject.LineNumber.ToString() : "unknown",
-								 GetPathAsString(xObject.XmlElement));
-
-		}
-
-		/// <summary>
-		/// Builds the information about the dynamic of the element for the Ranorex report
-		/// </summary>
-		/// <param name="xObject">The element to be evaluated</param>
-		/// <returns>A Report line about the dynamic informations about the element</returns>
-		private static string LogBuilderIsDynamic(XmlInfoObject xObject)
-		{
-			return string.Format("Is dynamic: {0}", xObject.IsDynamic ? "Yes" : "No");
-		}
-
-		/// <summary>
-		/// Returns the number of an element in the XML as report info.
-		/// </summary>
-		private static string LogBuilderElementCounter(int amountOf, XFileType fileType)
-		{
-			return string.Format("Frequency in the {0} file: {1}",
-								 fileType == XFileType.Reference ? "reference" : "test",
-								 amountOf.ToString());
-
-		}
-
-		/// <summary>
-		/// Comments a xml file
-		/// </summary>
-		/// <param name="xmlFile">the file to comment</param>
-		/// <param name="message">the comment message</param>
-		private static void CommentXmlFile(XDocument xmlFile, string message)
-		{
-			XComment xmlComment = new XComment(message);
-			xmlFile.Add(xmlComment);
-		}
-
-		/// <summary>
-		/// This is a placeholder text. Please describe the purpose of the
-		/// user code method here. The method is published to the user code library
-		/// within a user code collection.
-		/// </summary>
-		private static string LogBuilderError01(int countTest, int countRef, XmlInfoObject xmlInfoObject, bool includeExistsNote)
-		{
-			StringBuilder logBuilder = new StringBuilder();
-
-			logBuilder.AppendLine("==> Error 01");
-			logBuilder.AppendLine(string.Format("The number of reference element '{0}' with value '{1}' in the test file differs from the reference file.",
-												xmlInfoObject.Name,
-												   xmlInfoObject.XmlElement.Value));
-			if (includeExistsNote)
-			{
-				logBuilder.AppendLine("There are reference elements with the same name but different values");
-			}
-
-			return logBuilder.ToString();
-
-		}
-
-		/// <summary>
-		/// This is a placeholder text. Please describe the purpose of the
-		/// user code method here. The method is published to the user code library
-		/// within a user code collection.
-		/// </summary>
-		private static string LogBuilderError02(int countInTest, XmlInfoObject xmlInfoObject)
-		{
-			StringBuilder logBuilder = new StringBuilder();
-
-			logBuilder.AppendLine("==> Error 02");
-			logBuilder.AppendLine(string.Format("The test element '{0}' with value '{1}' is unknown for the reference file.",
-												xmlInfoObject.Name,
-												   xmlInfoObject.XmlElement.Value));
-
-			return logBuilder.ToString();
-		}
-
-		/// <summary>
 		/// Returns whether the specified file is a supported file
 		/// </summary>
 		/// <param name="file">The file path</param>
@@ -863,16 +912,14 @@ namespace XmlFileValidation
 			}
 
 			string fileExtension = System.IO.Path.GetExtension(file);
-			return SupportedFileTypes.Any
-				(
-					f => f.Replace(".", "").ToLower() == fileExtension.Replace(".", "").ToLower()
-				);
+
+			return SupportedFileTypes.Any(f => f.Replace(".", "").ToLower() == fileExtension.Replace(".", "").ToLower());
+
 		}
 
 		/// <summary>
-		/// This is a placeholder text. Please describe the purpose of the
-		/// user code method here. The method is published to the user code library
-		/// within a user code collection.
+		/// Removes all files from a directory that contains the supported file type 
+		/// from the SupportedFileExtension list
 		/// </summary>
 		[UserCodeMethod]
 		public static void ClearDictionary(string path)
@@ -889,15 +936,18 @@ namespace XmlFileValidation
 				return;
 			}
 
-
 			var listOfFiles = System.IO.Directory.GetFiles(path);
 
 			foreach (var file in listOfFiles)
 			{
+
 				if (IsSupportedFile(file))
 				{
+
 					System.IO.File.Delete(file);
+				
 				}
+
 			}
 
 		}
@@ -929,16 +979,30 @@ namespace XmlFileValidation
 					ReferenceFile = XDocument.Load(path, LoadOptions.SetLineInfo);
 					Report.Success(ReportCategory, string.Format("The reference file has been loaded: {0}", path));
 					break;
+				
 				case XmlValidation.XFileType.Test:
 					TestFile = XDocument.Load(path, LoadOptions.SetLineInfo);
 					Report.Success(ReportCategory, string.Format("The test file has been loaded: {0}", path));
-					TestFileName = System.IO.Path.GetFileName(path);
+					SaveTestFileName = System.IO.Path.GetFileName(path);
 					break;
+				
 				default:
 					throw new Exception("Invalid value for XFileType");
 			}
 
 		}
+
+		#endregion
+
+
+
+
+
+
+
+	
+
+
 
 
 		public class XmlInfoObject
@@ -947,7 +1011,6 @@ namespace XmlFileValidation
 			public XElement XmlElement { get; set; }
 			public int LineNumber { get; set; }
 			public bool IsDynamic { get; set; }
-
 
 			public XmlInfoObject(XElement xmlElement, bool isDynamic)
 			{
