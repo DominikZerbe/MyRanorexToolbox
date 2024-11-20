@@ -97,8 +97,14 @@ namespace XmlFileValidation
 		/// </summary>
 		public static bool ReportTestfileOnError = false;
 
+		/// <summary>
+		/// Should the testfile be exported on failure
+		/// </summary>
 		public static bool SaveTestFileOnError = false;
 
+		/// <summary>
+		/// The export path for the testfile on failure.
+		/// </summary>
 		public static string SaveTestFilePath;
 
 		/// <summary>
@@ -106,6 +112,8 @@ namespace XmlFileValidation
 		/// If the test file is exported in the event of a failure, this file name is used.
 		/// </summary>
 		public static string SaveTestFileName;
+
+		public static bool IsTestFailed {get; private set;}
 
 		#endregion
 
@@ -184,7 +192,7 @@ namespace XmlFileValidation
 		/// <param name="failOnMultipleFiles">If several files are found, there is a Failure in the log and the return value zero. Otherwise there is a warning and the first possible return value (bad practice).</param>
 		/// <returns></returns>
 		[UserCodeMethod]
-		public static string GetSingleFileFromPath(string path, bool failOnMultipleFiles)
+		public static string GetSingleFileFromPath(string path, bool failOnMultipleFiles = true)
 		{
 
 			if (path == null)
@@ -204,6 +212,7 @@ namespace XmlFileValidation
 			{
 
 				Report.Failure(ReportCategory, "No supported file could be found");
+				return null;
 
 			}
 			else if (supportedFiles.Count == 1)
@@ -213,59 +222,31 @@ namespace XmlFileValidation
 				return supportedFiles[0];
 
 			}
-			else if (supportedFiles.Count > 1)
-			{
 
-				Report.Log(
-					level: failOnMultipleFiles ? ReportLevel.Failure : ReportLevel.Warn,
+			// At this point, there are more files than one in the dictionary!
+
+			Report.Log(level: failOnMultipleFiles ? ReportLevel.Failure : ReportLevel.Warn,
 					category: ReportCategory,
 					message: string.Format("Several files are found in the directory that are supported. There should only be one. Path: {0}", path));
 
-				if (failOnMultipleFiles)
-				{
-
-					return null;
-
-				}
-				else
-				{
-					
-					// Ideally, this should not be used, but I leave it in anyway. 
-					Report.Warn(ReportCategory, string.Format("The first matching file is returned by chance: {0}", supportedFiles[0]));
-					return supportedFiles[0];
-
-				}
-
-			}
-
-			return null;
-
-		}
-
-		/// <summary>
-		/// Returns all supported files from a directory.
-		/// Supported files are files whose file associations are contained in the corresponding list
-		/// </summary>
-		/// <param name="path">The directory in which the files are located</param>
-		/// <returns>A list of paths to the supported files found in the directory</returns>
-		private static List<string> GetSupportedFilesFromPath(string path)
-		{
-
-			if (path == null)
+			if (failOnMultipleFiles)
 			{
-				throw new ArgumentNullException("path is null");
+
+				return null;
+
 			}
+			else
+			{
+					
+				// Ideally, this should not be used, but I leave it in anyway. 
+				Report.Warn(ReportCategory, string.Format("The first matching file is returned by chance: {0}", supportedFiles[0]));
+				return supportedFiles[0];
 
-			var supportedFiles = System.IO.Directory.GetFiles(path)
-													.Where(f => IsSupportedFile(f))
-													.ToList();
-
-			LogDebug("GetSupportedFilesFromPath", string.Format("{0} supported files were found in {1}.",
-																supportedFiles.Count.ToString(), path));
-
-			return supportedFiles;
+			}		
 
 		}
+
+
 
 		#endregion
 
@@ -361,13 +342,13 @@ namespace XmlFileValidation
 			{
 
 				// This object is designed for internal processing
-				XmlInfoObject xObject = new XmlInfoObject
+				XmlInfoObject xmlInfoObject = new XmlInfoObject
 				(
 					xmlElement: childElement,
 					isDynamic: DynamicXmlElements.Contains(childElement.Name.LocalName)
 				);
 
-				allParents.Add(xObject);
+				allParents.Add(xmlInfoObject);
 
 				// So that the loop can continue to run with the current object
 				childElement = childElement.Parent;
@@ -442,7 +423,11 @@ namespace XmlFileValidation
 				}
 
 				// Elements with sub-objects are not parsed. However, the lowest sub-objects are.
-				if (elementToParse.HasElements) { continue; }
+				if (elementToParse.HasElements) 
+				{
+					LogDebug("XmlInfoObjectParser", string.Format("The element '{0}' has childs and will be ignored.", elementToParse.Name.LocalName));
+					continue; 
+				}
 
 				// The flags in the XML are evaluated here
 				// No value comparison should take place for a dynamic value. Only the existence of the element should be checked there
@@ -459,13 +444,13 @@ namespace XmlFileValidation
 				}
 
 				// Neues xml Infoobject erstellen
-				XmlInfoObject xObject = new XmlInfoObject
+				XmlInfoObject xmlInfoObject = new XmlInfoObject
 				(
 					xmlElement: elementToParse,
 					isDynamic: DynamicXmlElements.Contains(elementToParse.Name.LocalName)				
 				);
 
-				foundElements.Add(xObject);
+				foundElements.Add(xmlInfoObject);
 
 			}
 
@@ -507,12 +492,20 @@ namespace XmlFileValidation
 		}
 
 		/// <summary>
-		/// Comments a xml file
+		/// Adds a comment to a xml file
 		/// </summary>
 		/// <param name="xmlFile">the file to comment</param>
 		/// <param name="message">the comment message</param>
 		private static void CommentXmlFile(XDocument xmlFile, string message)
 		{
+
+			if(xmlFile == null)
+			{
+				throw new ArgumentNullException("xmlFile is null");
+			}
+
+			// No message? No comment!
+			if(string.IsNullOrEmpty(message)){return;}
 
 			XComment xmlComment = new XComment(message);
 			xmlFile.Add(xmlComment);
@@ -553,10 +546,9 @@ namespace XmlFileValidation
 				return;
 			}
 
-			Report.Log(
-				level: stepIsFailed ? ReportLevel.Error : ReportLevel.Success,
-				category: ReportCategory,
-				message: reportMessage);
+			Report.Log(level: stepIsFailed ? ReportLevel.Error : ReportLevel.Success,
+					category: ReportCategory,
+					message: reportMessage);
 
 		}
 
@@ -602,7 +594,7 @@ namespace XmlFileValidation
 		private static string LogBuilderLineInformation(XmlInfoObject xmlInfoObject)
 		{
 
-			return string.Format("Line: {0} ==> Path: '{1}'",
+			return string.Format("Line: {0} ==> '{1}'",
 								 xmlInfoObject.LineNumber != -1 ? xmlInfoObject.LineNumber.ToString() : "unknown",
 								 GetPathAsString(xmlInfoObject.XmlElement));
 
@@ -629,7 +621,7 @@ namespace XmlFileValidation
 
 		}
 
-				/// <summary>
+		/// <summary>
 		/// This is a placeholder text. Please describe the purpose of the
 		/// user code method here. The method is published to the user code library
 		/// within a user code collection.
@@ -769,13 +761,11 @@ namespace XmlFileValidation
 
 			}
 
-
-			Report.Log(
-				level: teststepErrorCounter == 0 ? ReportLevel.Success : ReportLevel.Failure,
-				category: ReportCategory,
-				message: string.Format("Phase 1 completed. {0} reference elements were checked in the test file. {1} deviations were identified.",
-									   parsedReferenceElements.Count.ToString(),
-									   teststepErrorCounter.ToString()));
+			Report.Log(level: teststepErrorCounter == 0 ? ReportLevel.Success : ReportLevel.Failure,
+					category: ReportCategory,
+					message: string.Format("Phase 1 completed. {0} reference elements were checked in the test file. {1} deviations were identified.",
+									   		parsedReferenceElements.Count.ToString(),
+									   		teststepErrorCounter.ToString()));
 
 			// PHASE 2 BEGINS HERE
 
@@ -793,13 +783,13 @@ namespace XmlFileValidation
 			{
 				isTestStepFailed = false;
 
-				int countedRefElements = FindXmlInfoObject(
+				int totalReferenceElements = FindXmlInfoObject(
 					xmlDocument: ReferenceFile,
 					xmlElement: testElement.XmlElement,
 					valuesMustMatch: false,
 					strictPathMatching: false).Count;
 
-				int countedTestElements = FindXmlInfoObject(
+				int totalTestElements = FindXmlInfoObject(
 					xmlDocument: TestFile,
 					xmlElement: testElement.XmlElement,
 					valuesMustMatch: false,
@@ -809,15 +799,15 @@ namespace XmlFileValidation
 				StringBuilder logBuilder = new StringBuilder();
 				logBuilder.AppendLine(LogBuilderHeader(testElement, XFileType.Test))
 				.AppendLine(LogBuilderLineInformation(testElement))
-				.AppendLine(LogBuilderElementCounter(countedRefElements, XFileType.Reference))
-				.AppendLine(LogBuilderElementCounter(countedTestElements, XFileType.Test));
+				.AppendLine(LogBuilderElementCounter(totalReferenceElements, XFileType.Reference))
+				.AppendLine(LogBuilderElementCounter(totalTestElements, XFileType.Test));
 
-				if (countedRefElements == 0)
+				if (totalReferenceElements == 0)
 				{
 					isTestStepFailed = true;
 					teststepErrorCounter = teststepErrorCounter + 1;
 
-					logBuilder.AppendLine(LogBuilderError02(countedTestElements, testElement));
+					logBuilder.AppendLine(LogBuilderError02(totalTestElements, testElement));
 
 				}
 
@@ -841,11 +831,13 @@ namespace XmlFileValidation
 			if (isTestCaseFailed)
 			{
 
+				// This is a public readable property, to get the informations about the test result.
+				IsTestFailed = true;
+
 				// We can report the testfile, if the the option is true
 				if (ReportTestfileOnError)
 				{
-					Report.Info(category: ReportCategory,
-					   message: TestFile.ToString());
+					Report.Info(category: ReportCategory, message: TestFile.ToString());
 				}
 
 				// Writes the testfile to disk, if the option is true
@@ -853,17 +845,14 @@ namespace XmlFileValidation
 				{
 					string filepath = System.IO.Path.Combine(SaveTestFilePath, SaveTestFileName);
 
-					Report.Info(category: ReportCategory,
-						message: string.Format("Write testfile to disk: {0}", filepath));
+					Report.Info(category: ReportCategory, message: string.Format("Write testfile to disk: {0}", filepath));
 
-					WriteFileToDisk(xmlDocument: TestFile,
-						path: filepath);
+					WriteFileToDisk(xmlDocument: TestFile, path: filepath);
 				}
 
 			}
 
 		}
-
 
 		#endregion
 
@@ -936,19 +925,45 @@ namespace XmlFileValidation
 				return;
 			}
 
-			var listOfFiles = System.IO.Directory.GetFiles(path);
+			var supportedFiles = GetSupportedFilesFromPath(path);
 
-			foreach (var file in listOfFiles)
+			foreach(var file in supportedFiles)
 			{
 
-				if (IsSupportedFile(file))
+				try
 				{
-
 					System.IO.File.Delete(file);
-				
+					LogDebug("ClearDictionary",string.Format("The file was deleted: {0}",file));
 				}
+				catch(Exception ex)
+				{
+					Report.Failure(ReportCategory,string.Format("Could not delete file {0}. Exception: {1}",file,ex.Message));
+				}			
 
 			}
+
+		}
+
+		/// <summary>
+		/// Returns all supported files from a directory.
+		/// Supported files are files whose file associations are contained in the corresponding list
+		/// </summary>
+		/// <param name="path">The directory in which the files are located</param>
+		/// <returns>A list of paths to the supported files found in the directory</returns>
+		private static List<string> GetSupportedFilesFromPath(string path)
+		{
+
+			if (path == null)
+			{
+				throw new ArgumentNullException("path is null");
+			}
+
+			var supportedFiles = System.IO.Directory.GetFiles(path).Where(f => IsSupportedFile(f)).ToList();
+
+			LogDebug("GetSupportedFilesFromPath", string.Format("{0} supported files were found in {1}.",
+																supportedFiles.Count.ToString(), path));
+
+			return supportedFiles;
 
 		}
 
@@ -993,17 +1008,6 @@ namespace XmlFileValidation
 		}
 
 		#endregion
-
-
-
-
-
-
-
-	
-
-
-
 
 		public class XmlInfoObject
 		{
